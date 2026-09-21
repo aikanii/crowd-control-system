@@ -1,2 +1,1 @@
-# Backward compatibility shim
 from crowd_control.centroidtracker import CentroidTracker
