@@ -1,23 +1,25 @@
-#===============================================================================
-""" Optional features config. """
-#===============================================================================
-# Enter mail below to receive real-time email alerts
-# e.g., 'email@gmail.com'
-MAIL = ''
-# Enter the ip camera url (e.g., url = 'http://191.138.0.100:8040/video')
-url = ''
+"""
+Backward compatibility config - now uses modern AppConfig
+"""
+from crowd_control.config import AppConfig, load_config, get_config, MAIL, url, ALERT, Threshold, Thread, Log, Scheduler, Timer
 
-# ON/OFF for mail feature. Enter True to turn on the email alert feature.
-ALERT = False
-# Set max. people inside limit. Optimise number below: 10, 50, 100, etc.
-Threshold = 10
-# Threading ON/OFF
-Thread = False
-# Simple log to log the counting data
-Log = False
-# Auto run/Schedule the software to run at your desired time
-Scheduler = False
-# Auto stop the software after certain a time/hours
-Timer = False
-#===============================================================================
-#===============================================================================
+# For old code that does `import config` and accesses config.MAIL etc, we expose via module
+# The actual values are loaded from AppConfig
+import crowd_control.config as _modern
+_cfg = _modern.load_config()
+
+# Ensure module-level vars reflect loaded config
+MAIL = _cfg.MAIL
+url = _cfg.url
+ALERT = _cfg.ALERT
+Threshold = _cfg.Threshold
+Thread = _cfg.Thread
+Log = _cfg.Log
+Scheduler = _cfg.Scheduler
+Timer = _cfg.Timer
+
+# Additional modern fields accessible
+EMAIL_SENDER = _cfg.EMAIL_SENDER
+EMAIL_PASSWORD = _cfg.EMAIL_PASSWORD
+web_enabled = _cfg.web_enabled
+web_port = _cfg.web_port

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crowd Control Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+        .card { background: #1e293b; border: none; border-radius: 12px; }
+        .stat-card { text-align: center; padding: 20px; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; }
+        .occupancy-high { color: #ef4444; }
+        .occupancy-normal { color: #22c55e; }
+        .video-container { position: relative; border-radius: 12px; overflow: hidden; background: #000; }
+        .video-container img { width: 100%; height: auto; }
+        .alert-banner { background: #dc2626; color: white; padding: 12px; text-align: center; font-weight: bold; border-radius: 8px; display: none; }
+        .alert-banner.active { display: block; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        .navbar { background: #1e293b !important; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-dark mb-4">
+    <div class="container">
+        <span class="navbar-brand mb-0 h1">🚨 Crowd Control System v2.0</span>
+        <span class="badge bg-success" id="statusBadge">LIVE</span>
+    </div>
+</nav>
+
+<div class="container">
+    <div id="alertBanner" class="alert-banner mb-3">
+        🚨 ALERT: People limit exceeded! Current occupancy exceeds threshold
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="text-muted">Enter</div>
+                <div class="stat-number text-primary" id="enterCount">0</div>
+                <small>People entered</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="text-muted">Exit</div>
+                <div class="stat-number text-warning" id="exitCount">0</div>
+                <small>People exited</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="text-muted">Occupancy</div>
+                <div class="stat-number" id="occupancyCount">0</div>
+                <small>Current inside</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="text-muted">Threshold</div>
+                <div class="stat-number text-info" id="thresholdCount">10</div>
+                <small>Max allowed</small>
+                <div class="mt-2">
+                    <input type="number" id="thresholdInput" class="form-control form-control-sm" placeholder="Set threshold" style="background:#0f172a;color:white;border:1px solid #334155">
+                    <button class="btn btn-sm btn-outline-info mt-1 w-100" onclick="setThreshold()">Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8 mb-4">
+            <div class="card p-3">
+                <h5>Live Feed</h5>
+                <div class="video-container">
+                    <img src="/video_feed" alt="Live Feed" id="videoFeed">
+                </div>
+                <div class="mt-2 d-flex justify-content-between">
+                    <small class="text-muted">FPS: <span id="fpsCount">0</span> | Status: <span id="statusText">Waiting</span></small>
+                    <small class="text-muted">Source: Camera / Video</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card p-3 mb-4">
+                <h5>Occupancy Over Time</h5>
+                <canvas id="occupancyChart" height="200"></canvas>
+            </div>
+            <div class="card p-3">
+                <h5>Recent Events</h5>
+                <div id="eventsList" style="max-height: 300px; overflow-y: auto;">
+                    <small class="text-muted">No events yet</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card p-3">
+                <h5>System Info</h5>
+                <div class="row">
+                    <div class="col-md-4"><strong>Detector:</strong> <span id="detectorInfo">Auto (MobileNet/HOG)</span></div>
+                    <div class="col-md-4"><strong>Tracking:</strong> dlib + Centroid</div>
+                    <div class="col-md-4"><strong>Alerts:</strong> Email + Webhook + Console</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('occupancyChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Occupancy',
+                data: [],
+                borderColor: '#22c55e',
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                tension: 0.4,
+                fill: true
+            }, {
+                label: 'Threshold',
+                data: [],
+                borderColor: '#ef4444',
+                borderDash: [5,5],
+                pointRadius: 0,
+                tension: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#e2e8f0' } } },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, beginAtZero: true }
+            }
+        }
+    });
+
+    let history = [];
+    function updateStats() {
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('enterCount').textContent = data.enter || 0;
+                document.getElementById('exitCount').textContent = data.exit || 0;
+                document.getElementById('occupancyCount').textContent = data.occupancy || 0;
+                document.getElementById('thresholdCount').textContent = data.threshold || 10;
+                document.getElementById('fpsCount').textContent = (data.fps || 0).toFixed(1);
+                document.getElementById('statusText').textContent = data.status || 'Tracking';
+
+                const occEl = document.getElementById('occupancyCount');
+                const alertBanner = document.getElementById('alertBanner');
+                if (data.alert) {
+                    occEl.className = 'stat-number occupancy-high';
+                    alertBanner.classList.add('active');
+                } else {
+                    occEl.className = 'stat-number occupancy-normal';
+                    alertBanner.classList.remove('active');
+                }
+
+                // Chart
+                const now = new Date().toLocaleTimeString();
+                history.push({time: now, occupancy: data.occupancy, threshold: data.threshold});
+                if (history.length > 20) history.shift();
+
+                chart.data.labels = history.map(h => h.time);
+                chart.data.datasets[0].data = history.map(h => h.occupancy);
+                chart.data.datasets[1].data = history.map(h => h.threshold);
+                chart.update();
+
+                // Events
+                if (data.recent_events || data.history) {
+                    // Try to show events if available
+                    const events = data.recent_events || [];
+                    const list = document.getElementById('eventsList');
+                    if (events.length > 0) {
+                        list.innerHTML = events.slice().reverse().map(ev => `
+                            <div class="border-bottom border-secondary py-2">
+                                <small><span class="badge ${ev.direction==='enter'?'bg-primary':'bg-warning'}">${ev.direction}</span> ID ${ev.id} - ${new Date(ev.time).toLocaleTimeString()}</small>
+                            </div>
+                        `).join('');
+                    }
+                }
+            })
+            .catch(e => console.error(e));
+    }
+
+    function setThreshold() {
+        const val = document.getElementById('thresholdInput').value;
+        if (!val) return;
+        fetch('/api/threshold', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({threshold: parseInt(val)})
+        }).then(r => r.json()).then(d => {
+            alert('Threshold updated to ' + d.threshold);
+        });
+    }
+
+    setInterval(updateStats, 1000);
+    updateStats();
+</script>
+</body>
+</html>
